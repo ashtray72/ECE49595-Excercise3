@@ -1,0 +1,10 @@
+# Environment variable files
+.env
+.evn.*
+
+# Python cache files
+__pycache__/
+*.py[cod]
+
+# Local app state
+courts_state.json
