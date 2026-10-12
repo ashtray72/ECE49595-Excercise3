@@ -1,3 +1,4 @@
+Create a file called ".env" and enter the API Key given by the Google Cloud Platform. Format it similar to ".env.example".
 Enter command "python main.py" to open.
 A window should appear showing a map of West Lafayette. The user is able to pan by holding left click and dragging.
 Right click will open a list, selecting "Set as My Location" will create a blue pin on the map. 

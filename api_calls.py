@@ -1,7 +1,15 @@
 import requests
+import os
+from dotenv import load_dotenv
+
+
+load_dotenv() # reads .env
+API_KEY = os.getenv("GOOGLE_PLACES_KEY")
+
+if not API_KEY:
+   raise RuntimeError("GOOGLE_PLACES_KEY is not set. Add it to your .env file.")
 
 def find_potential_locations(center):
-  API_KEY = "AIzaSyDY2K1QOmbspRUx56MdeJM2Mvtjt-pZrYQ"
   url = "https://places.googleapis.com/v1/places:searchNearby" # Using the modern Places API (New) endpoint
 
   headers = {
