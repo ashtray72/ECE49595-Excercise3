@@ -1,5 +1,5 @@
 import tkinter as tk
-from tkinter import messagebox
+from tkinter import messagebox, ttk
 from tkintermapview import TkinterMapView
 from places_client import search_courts, SPORT_QUERIES, PlacesAPIError
 
@@ -24,7 +24,21 @@ class interactive_map(tk.Tk):
         self.location_entry = tk.Entry(control_frame, width=25)
         self.location_entry.insert(0, "West Lafayette, IN") # Default
         self.location_entry.pack(side=tk.LEFT, padx=5)
-        
+
+        # Add Sport dropdown menu selection
+        tk.Label(control_frame, text="Sport:", font=("Arial", 10, "bold"), bg="#f0f0f0").pack(side=tk.LEFT, padx=5)
+
+        self.sport_var = tk.StringVar(value="Basketball")
+        self.sport_dropdown = ttk.Combobox(
+            control_frame,
+            textvariable=self.sport_var,
+            values=list(SPORT_QUERIES.keys()),
+            state="readonly",
+            width=14
+        )
+        self.sport_dropdown.pack(side=tk.LEFT, padx=5)
+        self.sport_dropdown.bind("<<ComboboxSelected>>", lambda e: self.load_courts())
+
         search_btn = tk.Button(control_frame, text="Load Courts", command=self.load_courts, bg="#4CAF50", fg="white")
         search_btn.pack(side=tk.LEFT, padx=5)
         
@@ -54,52 +68,45 @@ class interactive_map(tk.Tk):
 
     def load_courts(self):
         """
-        Calls Google Places (New) API to find courts near to the user's set marker.
+        Calls Google Places (New) API to find courts for a specified sport near to the user's set marker.
         Places the nearby locations on the map as red pins
         """
-        potential_locs = find_potential_locations(self.user_custom_marker.position)
+        if self.user_custom_marker is None:
+            messagebox.showinfo("No location", "Right-click the map and choose 'Set as My Location' first.")
+            return
+
+        sport = self.sport_var.get()
+        try:
+            courts = search_courts(self.user_custom_marker.position, sport)
+        except PlacesAPIError as e:
+            messagebox.showerror("Search failed", str(e))
+            return
 
         # Clear existing markers
         for m in self.markers:
             m.delete()
         self.markers = []
-        
-        # Mock data for courts around the location (Lat, Lon, Name, Is_In_Use)
-        
-        mock_courts = []
-        for name, (lat, lng) in potential_locs.items():
-          # Format: (latitude, longitude, name, in_use_status)
-          mock_courts.append((lat, lng, name, False))
+        self.in_use_count = 0
+        self.selected_marker = None  # old selection was deleted with the markers
 
-
-        # Count current in-use to ensure max 3 rule visually
-        self.in_use_count = sum(1 for c in mock_courts if c[3])
-        
-        for lat, lon, name, is_in_use in mock_courts:
-            # Determine color based on state
-            if is_in_use:
-                display_text = f"🔴 {name} (IN USE)"
-            else:
-                display_text = f"{name} (Free)"
-                
-            # Create marker with a click callback
+        for court in courts:
+            name = court["name"]
             marker = self.map_widget.set_marker(
-                lat, lon,
-                text=display_text,
-                command=lambda m, in_use=is_in_use, n=name: self.on_marker_click(m, in_use, n)
+                court["lat"], court["lon"],
+                text=f"{name} ({court['distance_m']} m)",
+                command=lambda m, n=name: self.on_marker_click(m, False, n),
             )
-            # Customizing marker color via internal attributes if supported, 
-            # or rely on text tagging. (tkintermapview uses default blue unless configured)
             self.markers.append(marker)
-            
-        self.status_label.config(text=f"Loaded {len(mock_courts)} courts. Currently {self.in_use_count}/3 in use.")
+
+        self.status_label.config(text=f"Found {len(courts)} {sport.lower()} locations nearby.")
+
 
     def on_marker_click(self, marker, is_in_use, court_name):
         """Handles user selection rules"""
         if is_in_use:
             messagebox.showwarning("Unavailable", f"'{court_name}' is currently IN USE and cannot be selected right now.")
             return
-            
+
         if self.in_use_count >= self.MAX_IN_USE:
             messagebox.showerror("Limit Reached", "Sorry, the maximum limit of 3 courts 'in use' has already been reached globally.")
             return
@@ -108,13 +115,12 @@ class interactive_map(tk.Tk):
         if self.selected_marker and self.selected_marker != marker:
             # Reset previous selection color/text
             self.selected_marker.set_text(self.selected_marker.text.replace(" [SELECTED]", ""))
-            
+
         # Set new selection
         self.selected_marker = marker
         if " [SELECTED]" not in marker.text:
             marker.set_text(marker.text + " [SELECTED]")
-            
-        messagebox.showinfo("Court Selected", "You have successfully selected " + court_name)
+
 
     def set_user_loc(self, coords):
         """   

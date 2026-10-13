@@ -110,3 +110,43 @@ def parse_places(response_json, center, radius_m):
     results.sort(key=lambda r: r["distance_m"])
     return results
 
+
+def search_courts(center, sport, radius_m=3000, max_results=20):
+    """
+    Finds locations for `sport` near `center` (lat, lon).
+    Returns a list of dicts sorted by distance:
+        {"id", "name", "lat", "lon", "types", "distance_m"}
+    Raises PlacesAPIError if the request fails.
+    """
+    if sport not in SPORT_QUERIES:
+        raise ValueError(f"Unknown sport: {sport}")
+
+    headers = {
+        "Content-Type": "application/json",
+        "X-Goog-Api-Key": _get_api_key(),
+        "X-Goog-FieldMask": FIELD_MASK,
+    }
+    body = {
+        "textQuery": SPORT_QUERIES[sport],
+        "pageSize": max_results,
+        "locationBias": {
+            "circle": {
+                "center": {"latitude": center[0], "longitude": center[1]},
+                "radius": float(radius_m),
+            }
+        },
+    }
+
+    try:
+        response = requests.post(TEXT_SEARCH_URL, headers=headers, json=body, timeout=10)
+    except requests.RequestException as e:
+        raise PlacesAPIError(f"Could not reach Google Places: {e}") from e
+
+    if response.status_code != 200:
+        try:
+            message = response.json()["error"]["message"]
+        except (ValueError, KeyError):
+            message = response.text
+        raise PlacesAPIError(f"Places API error {response.status_code}: {message}")
+
+    return parse_places(response.json(), center, radius_m)
