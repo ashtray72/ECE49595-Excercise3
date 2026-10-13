@@ -1,7 +1,7 @@
 import tkinter as tk
 from tkinter import messagebox
 from tkintermapview import TkinterMapView
-from api_calls import find_potential_locations
+from places_client import search_courts, SPORT_QUERIES, PlacesAPIError
 
 class interactive_map(tk.Tk):
     def __init__(self):
