@@ -2,6 +2,14 @@ import tkinter as tk
 from tkinter import messagebox, ttk
 from tkintermapview import TkinterMapView
 from places_client import search_courts, SPORT_QUERIES, PlacesAPIError
+from court_manager import CourtManager, SelectionError
+
+MARKER_STYLE = {
+    # status      label       circle      outside
+    "free":     ("Free",     "green", "darkgreen"),
+    "in_use":   ("In Use",   "red",   "darkred"),
+    "selected": ("Selected", "gold",  "orange")
+}
 
 class interactive_map(tk.Tk):
     def __init__(self):
@@ -11,9 +19,8 @@ class interactive_map(tk.Tk):
         self.geometry("900x700")
         
         # State tracking
-        self.selected_marker = None
-        self.in_use_count = 0
-        self.MAX_IN_USE = 3
+        self.manager = CourtManager()
+        self.current_courts = []
         
         # 1. Top Frame: User Location & Controls
         control_frame = tk.Frame(self, bg="#f0f0f0", height=50)
@@ -41,6 +48,10 @@ class interactive_map(tk.Tk):
 
         search_btn = tk.Button(control_frame, text="Load Courts", command=self.load_courts, bg="#4CAF50", fg="white")
         search_btn.pack(side=tk.LEFT, padx=5)
+
+        # Add button to give up a court
+        release_btn = tk.Button(control_frame, text="Release Court", command=self.release_court)
+        release_btn.pack(side=tk.LEFT, padx=5)
         
         self.status_label = tk.Label(control_frame, text="Select a court (Max 3 in-use globally)", font=("Arial", 10), bg="#f0f0f0", fg="gray")
         self.status_label.pack(side=tk.RIGHT, padx=5)
@@ -82,45 +93,50 @@ class interactive_map(tk.Tk):
             messagebox.showerror("Search failed", str(e))
             return
 
-        # Clear existing markers
+        self.current_courts = self.manager.merge_results(courts, sport)
+        self.render_courts()
+
+
+    def render_courts(self):
+        """Redraws every court marker using its current status"""
         for m in self.markers:
             m.delete()
         self.markers = []
-        self.in_use_count = 0
-        self.selected_marker = None  # old selection was deleted with the markers
 
-        for court in courts:
-            name = court["name"]
+        for court in self.current_courts:
+            label, circle, outside = MARKER_STYLE[self.manager.status(court.id)]
             marker = self.map_widget.set_marker(
-                court["lat"], court["lon"],
-                text=f"{name} ({court['distance_m']} m)",
-                command=lambda m, n=name: self.on_marker_click(m, False, n),
+                court.lat, court.lon,
+                text=f"{court.name} ({label})",
+                marker_color_circle=circle,
+                marker_color_outside=outside,
+                command=lambda m, cid=court.id: self.on_marker_click(cid)
             )
             self.markers.append(marker)
 
-        self.status_label.config(text=f"Found {len(courts)} {sport.lower()} locations nearby.")
+        self.status_label.config(
+            text=f"{len(self.current_courts)} courts - "
+                 f"{self.manager.in_use_count}/{self.manager.max_in_use} in use"
+        )
 
-
-    def on_marker_click(self, marker, is_in_use, court_name):
+    def on_marker_click(self, court_id):
         """Handles user selection rules"""
-        if is_in_use:
-            messagebox.showwarning("Unavailable", f"'{court_name}' is currently IN USE and cannot be selected right now.")
+        try:
+            court = self.manager.select(court_id)
+        except SelectionError as e:
+            messagebox.showwarning("Can't select court", str(e))
             return
 
-        if self.in_use_count >= self.MAX_IN_USE:
-            messagebox.showerror("Limit Reached", "Sorry, the maximum limit of 3 courts 'in use' has already been reached globally.")
+        self.render_courts()
+        messagebox.showinfo("Court Selected", f"You have selected {court.name}")
+
+
+    def release_court(self):
+        if self.manager.selected_court is None:
+            messagebox.showinfo("No court", "You don't have a court selected.")
             return
-
-        # Enforce rule: One user can only select ONE location at a time
-        if self.selected_marker and self.selected_marker != marker:
-            # Reset previous selection color/text
-            self.selected_marker.set_text(self.selected_marker.text.replace(" [SELECTED]", ""))
-
-        # Set new selection
-        self.selected_marker = marker
-        if " [SELECTED]" not in marker.text:
-            marker.set_text(marker.text + " [SELECTED]")
-
+        self.manager.release()
+        self.render_courts()
 
     def set_user_loc(self, coords):
         """   
